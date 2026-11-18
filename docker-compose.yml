@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  ai-smart-trap:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-smart-trap-app
+    restart: always
+    ports:
+      - "80:80"
