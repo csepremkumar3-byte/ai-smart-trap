@@ -139,7 +139,7 @@ export default function TrapView({ initialDistrictFilter = 'All', currentUserRol
 
       return matchesSearch && matchesState && matchesDistrict && matchesStatus && matchesIssue;
     });
-  }, [searchTerm, selectedState, selectedDistrict, selectedStatus, selectedIssue, currentUserRole]);
+  }, [searchTerm, selectedState, selectedDistrict, selectedStatus, selectedIssue, currentUserRole, trapsList]);
 
   // Fleet summary distribution metrics
   const fleetStats = useMemo(() => {
@@ -338,8 +338,15 @@ export default function TrapView({ initialDistrictFilter = 'All', currentUserRol
               <div>
                 {/* 1. Header: Prominent Trap Code */}
                 <div className="px-4 py-3 bg-[#f8faf7] border-b border-[#e5ebe3] flex items-center justify-between">
-                  <div className="text-lg font-black tracking-tight text-[#145334]">
-                    {trap.id}
+                  <div className="flex items-center gap-2">
+                    <div className="text-lg font-black tracking-tight text-[#145334]">
+                      {trap.id}
+                    </div>
+                    {trap.imageUrl && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 animate-pulse">
+                        ● LIVE IOT
+                      </span>
+                    )}
                   </div>
 
                   {/* Fault badge only if actual hardware issue */}
