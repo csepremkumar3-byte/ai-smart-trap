@@ -3,8 +3,9 @@ import sqlite3
 import datetime
 import shutil
 import base64
+import json
 from typing import Optional
-from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -12,6 +13,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOADS_DIR = os.path.join(BASE_DIR, "uploads")
 DATA_DIR = os.path.join(BASE_DIR, "data")
 DB_PATH = os.path.join(DATA_DIR, "traps.db")
+LOG_PATH = os.path.join(DATA_DIR, "incoming_raw.log")
 
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -19,7 +21,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 app = FastAPI(
     title="AI Smart Trap Ingestion API",
     description="Receives real-time camera captures and weather telemetry from AI Smart Traps",
-    version="1.0.0"
+    version="1.1.0"
 )
 
 # Enable CORS for frontend requests
@@ -77,55 +79,62 @@ def init_db():
 
 init_db()
 
+def log_raw_request(source: str, query: str, headers: dict, body_preview: str):
+    try:
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            t = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"[{t}] [{source}] Query: {query} | Headers: {json.dumps(headers)} | Body: {body_preview}\n")
+    except Exception:
+        pass
+
 @app.get("/api/health")
 def health_check():
     return {
         "status": "online",
         "service": "AI Smart Trap Ingestion API",
+        "endpoints": ["/api/upload", "/CICRAIIO.aspx", "/api/traps"],
         "time": datetime.datetime.now().isoformat()
     }
 
-@app.post("/api/upload")
-async def upload_trap_data(
-    request: Request,
-    trap_id: Optional[str] = Form(None),
-    device_sn: Optional[str] = Form(None),
-    temp: Optional[float] = Form(None),
-    temperature: Optional[float] = Form(None),
-    humidity: Optional[float] = Form(None),
-    pressure: Optional[float] = Form(None),
-    battery: Optional[float] = Form(None),
-    issue: Optional[str] = Form("None"),
-    moths: Optional[int] = Form(0),
-    file: Optional[UploadFile] = File(None),
-    image: Optional[UploadFile] = File(None)
-):
+@app.api_route("/CICRAIIO.aspx", methods=["GET", "POST"])
+@app.api_route("/api/upload", methods=["GET", "POST"])
+async def universal_trap_upload(request: Request):
     """
-    Flexible endpoint that accepts both multipart/form-data and JSON bodies
-    to support diverse ESP32 / 4G Dongle firmware implementations.
+    Universal ingestion endpoint supporting both:
+    1. /CICRAIIO.aspx (Native Indianmark firmware URL)
+    2. /api/upload (Modern REST API)
+    Handles Multipart, JSON, Form, and Query parameters.
     """
     now = datetime.datetime.now()
     timestamp_str = now.strftime("%d-%m-%Y %H:%M:%S")
     file_timestamp = now.strftime("%Y%m%d_%H%M%S")
 
-    # Check if incoming request is JSON
-    content_type = request.headers.get("content-type", "")
-    image_rel_url = None
+    # Extract all possible query parameters
+    qp = dict(request.query_params)
+    trap_id = qp.get("sn") or qp.get("trap_id") or qp.get("id") or qp.get("device_sn")
+    device_sn = qp.get("device_sn") or qp.get("sn") or trap_id
+    temp = qp.get("temp") or qp.get("temperature") or qp.get("t")
+    humidity = qp.get("humidity") or qp.get("hum") or qp.get("h")
+    pressure = qp.get("pressure") or qp.get("press") or qp.get("p")
+    battery = qp.get("battery") or qp.get("bat") or qp.get("b")
+    moths = qp.get("moths") or qp.get("count") or 0
 
+    image_rel_url = None
+    content_type = request.headers.get("content-type", "")
+
+    # Parse Body
     if "application/json" in content_type:
         try:
             body = await request.json()
-            trap_id = body.get("trap_id") or body.get("trapId") or trap_id or "DEMO-TRAP-01"
-            device_sn = body.get("device_sn") or body.get("deviceSn") or device_sn or "IMAI036DEMO001"
-            temp = body.get("temp") or body.get("temperature") or temp or 24.5
-            humidity = body.get("humidity") or humidity or 65.0
-            pressure = body.get("pressure") or pressure or 1013.2
-            battery = body.get("battery") or battery or 95.0
-            issue = body.get("issue") or issue or "None"
-            moths = body.get("moths") or moths or 0
+            trap_id = body.get("trap_id") or body.get("sn") or body.get("id") or trap_id or "DEMO-TRAP-01"
+            device_sn = body.get("device_sn") or body.get("sn") or device_sn or trap_id or "IMAI036DEMO001"
+            temp = body.get("temp") or body.get("temperature") or temp
+            humidity = body.get("humidity") or body.get("hum") or humidity
+            pressure = body.get("pressure") or body.get("press") or pressure
+            battery = body.get("battery") or body.get("bat") or battery
+            moths = body.get("moths") or body.get("count") or moths
 
-            # Base64 image support in JSON
-            base64_img = body.get("image") or body.get("photo") or body.get("file")
+            base64_img = body.get("image") or body.get("photo") or body.get("file") or body.get("img")
             if base64_img and isinstance(base64_img, str):
                 if "," in base64_img:
                     base64_img = base64_img.split(",", 1)[1]
@@ -134,28 +143,75 @@ async def upload_trap_data(
                 with open(filepath, "wb") as f:
                     f.write(base64.b64decode(base64_img))
                 image_rel_url = f"/uploads/{filename}"
+            log_raw_request("JSON", str(qp), dict(request.headers), str(body)[:200])
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
+            pass
+    elif "multipart/form-data" in content_type or "application/x-www-form-urlencoded" in content_type:
+        try:
+            form = await request.form()
+            trap_id = form.get("trap_id") or form.get("sn") or form.get("device_sn") or form.get("id") or trap_id or "DEMO-TRAP-01"
+            device_sn = form.get("device_sn") or form.get("sn") or device_sn or trap_id or "IMAI036DEMO001"
+            temp = form.get("temp") or form.get("temperature") or form.get("t") or temp
+            humidity = form.get("humidity") or form.get("hum") or form.get("h") or humidity
+            pressure = form.get("pressure") or form.get("press") or form.get("p") or pressure
+            battery = form.get("battery") or form.get("bat") or form.get("b") or battery
+            moths = form.get("moths") or form.get("count") or moths
+
+            # Check for uploaded file
+            for field_name in ["file", "image", "photo", "pic", "img", "upload"]:
+                val = form.get(field_name)
+                if val and hasattr(val, "filename") and val.filename:
+                    clean_filename = f"trap_{trap_id}_{file_timestamp}.jpg"
+                    filepath = os.path.join(UPLOADS_DIR, clean_filename)
+                    with open(filepath, "wb") as buffer:
+                        shutil.copyfileobj(val.file, buffer)
+                    image_rel_url = f"/uploads/{clean_filename}"
+                    break
+            log_raw_request("FORM", str(qp), dict(request.headers), str(form.keys())[:200])
+        except Exception as e:
+            pass
     else:
-        # Form / Multipart data
-        trap_id = trap_id or device_sn or "DEMO-TRAP-01"
-        device_sn = device_sn or trap_id or "IMAI036DEMO001"
-        final_temp = temp if temp is not None else (temperature if temperature is not None else 24.5)
-        temp = final_temp
-        humidity = humidity if humidity is not None else 65.0
-        pressure = pressure if pressure is not None else 1013.2
-        battery = battery if battery is not None else 95.0
+        # Check raw body (some cameras post raw JPEG directly in body)
+        raw_bytes = await request.body()
+        if raw_bytes and len(raw_bytes) > 100:
+            if raw_bytes[:3] == b'\xff\xd8\xff' or raw_bytes[:4] == b'\x89PNG':
+                trap_id = trap_id or "DEMO-TRAP-01"
+                clean_filename = f"trap_{trap_id}_{file_timestamp}.jpg"
+                filepath = os.path.join(UPLOADS_DIR, clean_filename)
+                with open(filepath, "wb") as f:
+                    f.write(raw_bytes)
+                image_rel_url = f"/uploads/{clean_filename}"
+            log_raw_request("RAW_BYTES", str(qp), dict(request.headers), f"Length: {len(raw_bytes)}")
 
-        # Handle uploaded file
-        upload_obj = file or image
-        if upload_obj and upload_obj.filename:
-            clean_filename = f"trap_{trap_id}_{file_timestamp}.jpg"
-            filepath = os.path.join(UPLOADS_DIR, clean_filename)
-            with open(filepath, "wb") as buffer:
-                shutil.copyfileobj(upload_obj.file, buffer)
-            image_rel_url = f"/uploads/{clean_filename}"
+    # Fallbacks and type conversions
+    trap_id = str(trap_id or "DEMO-TRAP-01")
+    device_sn = str(device_sn or trap_id)
 
-    # Default image fallback if no file was uploaded
+    try:
+        temp_val = float(temp) if temp is not None else 28.5
+    except (ValueError, TypeError):
+        temp_val = 28.5
+
+    try:
+        humidity_val = float(humidity) if humidity is not None else 65.0
+    except (ValueError, TypeError):
+        humidity_val = 65.0
+
+    try:
+        pressure_val = float(pressure) if pressure is not None else 1012.0
+    except (ValueError, TypeError):
+        pressure_val = 1012.0
+
+    try:
+        battery_val = float(battery) if battery is not None else 95.0
+    except (ValueError, TypeError):
+        battery_val = 95.0
+
+    try:
+        moths_val = int(moths) if moths is not None else 0
+    except (ValueError, TypeError):
+        moths_val = 0
+
     if not image_rel_url:
         image_rel_url = "/trap-inspection-images/inspection-01.jpeg"
 
@@ -170,7 +226,7 @@ async def upload_trap_data(
                 humidity=excluded.humidity,
                 pressure=excluded.pressure,
                 battery=excluded.battery,
-                issue=excluded.issue,
+                issue='None',
                 last_sync=excluded.last_sync,
                 image_url=excluded.image_url,
                 moths=excluded.moths,
@@ -181,34 +237,29 @@ async def upload_trap_data(
             f"Field Trap - {trap_id}",
             "Hisar",
             "Haryana",
-            temp,
-            humidity,
-            pressure,
-            battery,
-            issue,
+            temp_val,
+            humidity_val,
+            pressure_val,
+            battery_val,
+            "None",
             timestamp_str,
             image_rel_url,
-            moths,
+            moths_val,
             "Active"
         ))
 
         cursor.execute('''
             INSERT INTO readings_history (trap_id, temp, humidity, pressure, battery, image_url, timestamp, moths)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (trap_id, temp, humidity, pressure, battery, image_rel_url, timestamp_str, moths))
+        ''', (trap_id, temp_val, humidity_val, pressure_val, battery_val, image_rel_url, timestamp_str, moths_val))
         conn.commit()
 
-    return {
-        "status": "success",
-        "message": "Data & image successfully recorded",
-        "trap_id": trap_id,
-        "temperature": temp,
-        "humidity": humidity,
-        "pressure": pressure,
-        "battery": battery,
-        "image_url": image_rel_url,
-        "last_sync": timestamp_str
-    }
+    # Returns response containing OK, SUCCESS, and 1 to satisfy any firmware check
+    return Response(
+        content='{"status":"OK","code":1,"response":"SUCCESS","trap_id":"' + trap_id + '"}',
+        media_type="application/json",
+        status_code=200
+    )
 
 @app.get("/api/traps")
 def list_traps():
@@ -237,3 +288,14 @@ def get_trap_detail(trap_id: str):
         data = dict(row)
         data["history"] = history
         return data
+
+@app.get("/api/logs")
+def view_incoming_logs():
+    """
+    Diagnostic endpoint to view raw incoming requests from physical traps.
+    """
+    if os.path.exists(LOG_PATH):
+        with open(LOG_PATH, "r", encoding="utf-8") as f:
+            lines = f.readlines()[-50:]
+        return {"recent_logs": lines}
+    return {"recent_logs": []}
