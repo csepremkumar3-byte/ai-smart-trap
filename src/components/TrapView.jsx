@@ -15,8 +15,9 @@ export default function TrapView({ initialDistrictFilter = 'All', currentUserRol
   const [selectedDate, setSelectedDate] = useState('Today');
   const [activeModalTrap, setActiveModalTrap] = useState(null);
   const [trapsList, setTrapsList] = useState(TRAPS_DATA);
+  const [rawLiveTraps, setRawLiveTraps] = useState([]);
 
-  // Poll /api/traps every 8 seconds for live trap uploads from ESP32 / demo traps
+  // Poll /api/traps every 5 seconds for live trap uploads from ESP32 / demo traps
   React.useEffect(() => {
     let isMounted = true;
     const fetchLiveTraps = async () => {
@@ -24,6 +25,9 @@ export default function TrapView({ initialDistrictFilter = 'All', currentUserRol
         const res = await fetch('/api/traps');
         if (!res.ok) return;
         const data = await res.json();
+        if (data && Array.isArray(data.traps) && isMounted) {
+          setRawLiveTraps(data.traps);
+        }
         if (data && Array.isArray(data.traps) && data.traps.length > 0 && isMounted) {
           setTrapsList((prev) => {
             const liveMap = new Map();
@@ -168,6 +172,57 @@ export default function TrapView({ initialDistrictFilter = 'All', currentUserRol
 
   return (
     <div className="space-y-6">
+      {/* Real-Time Connected Field Traps Banner */}
+      {rawLiveTraps.length > 0 && (
+        <div className="bg-[#145334] text-white rounded-2xl p-4 shadow-md border-2 border-emerald-500 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fadeIn">
+          <div className="flex items-center gap-3">
+            <span className="relative flex h-3.5 w-3.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-400"></span>
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase tracking-wider text-emerald-300">
+                  Live IoT Trap Connected
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-900 text-emerald-200 border border-emerald-600">
+                  Real Hardware Data
+                </span>
+              </div>
+              <div className="text-lg font-black text-white mt-0.5">
+                {rawLiveTraps[0].id}{' '}
+                <span className="text-xs font-normal text-emerald-200">
+                  (S/N: {rawLiveTraps[0].device_sn || rawLiveTraps[0].id})
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 text-xs">
+            <div className="bg-emerald-900/80 px-3 py-1.5 rounded-xl border border-emerald-700/80">
+              <span className="text-[10px] text-emerald-300 block font-semibold">Temperature</span>
+              <span className="text-sm font-black text-white">{rawLiveTraps[0].temp} °C</span>
+            </div>
+            <div className="bg-emerald-900/80 px-3 py-1.5 rounded-xl border border-emerald-700/80">
+              <span className="text-[10px] text-emerald-300 block font-semibold">Humidity</span>
+              <span className="text-sm font-black text-white">{rawLiveTraps[0].humidity} %</span>
+            </div>
+            <div className="bg-emerald-900/80 px-3 py-1.5 rounded-xl border border-emerald-700/80">
+              <span className="text-[10px] text-emerald-300 block font-semibold">Pressure</span>
+              <span className="text-sm font-black text-white">{rawLiveTraps[0].pressure} hPa</span>
+            </div>
+            <div className="bg-emerald-900/80 px-3 py-1.5 rounded-xl border border-emerald-700/80">
+              <span className="text-[10px] text-emerald-300 block font-semibold">Battery</span>
+              <span className="text-sm font-black text-white">{rawLiveTraps[0].battery} %</span>
+            </div>
+            <div className="bg-emerald-900/80 px-3 py-1.5 rounded-xl border border-emerald-700/80">
+              <span className="text-[10px] text-emerald-300 block font-semibold">Last Cloud Sync</span>
+              <span className="text-xs font-bold text-white">{rawLiveTraps[0].last_sync}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Filter Bar with Clean Native-Style Controls (No SVG Icons) */}
       <div className="bg-white rounded-2xl p-4 border-2 border-[#dbe3d8] shadow-xs flex flex-wrap items-center gap-3">
         {/* Search */}

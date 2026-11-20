@@ -39,6 +39,27 @@ export default function OverviewView({ currentUserRole, onSelectDistrict }) {
   const [selectedDistrict, setSelectedDistrict] = useState(
     currentUserRole?.district || 'Hisar'
   );
+  const [liveTraps, setLiveTraps] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchLive = async () => {
+      try {
+        const res = await fetch('/api/traps');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && Array.isArray(data.traps) && isMounted) {
+          setLiveTraps(data.traps);
+        }
+      } catch (e) {}
+    };
+    fetchLive();
+    const interval = setInterval(fetchLive, 5000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     if (currentUserRole?.district) {
@@ -156,6 +177,57 @@ export default function OverviewView({ currentUserRole, onSelectDistrict }) {
 
   return (
     <div className="space-y-5 select-none">
+      {/* Real-Time Connected Field Traps Banner */}
+      {liveTraps.length > 0 && (
+        <div className="bg-[#145334] text-white rounded-2xl p-4 shadow-md border-2 border-emerald-500 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fadeIn">
+          <div className="flex items-center gap-3">
+            <span className="relative flex h-3.5 w-3.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-400"></span>
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase tracking-wider text-emerald-300">
+                  Live IoT Trap Connected
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-900 text-emerald-200 border border-emerald-600">
+                  Direct Cloud Feed
+                </span>
+              </div>
+              <div className="text-lg font-black text-white mt-0.5">
+                {liveTraps[0].id}{' '}
+                <span className="text-xs font-normal text-emerald-200">
+                  (S/N: {liveTraps[0].device_sn || liveTraps[0].id})
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 text-xs">
+            <div className="bg-emerald-900/80 px-3 py-1.5 rounded-xl border border-emerald-700/80">
+              <span className="text-[10px] text-emerald-300 block font-semibold">Temperature</span>
+              <span className="text-sm font-black text-white">{liveTraps[0].temp} °C</span>
+            </div>
+            <div className="bg-emerald-900/80 px-3 py-1.5 rounded-xl border border-emerald-700/80">
+              <span className="text-[10px] text-emerald-300 block font-semibold">Humidity</span>
+              <span className="text-sm font-black text-white">{liveTraps[0].humidity} %</span>
+            </div>
+            <div className="bg-emerald-900/80 px-3 py-1.5 rounded-xl border border-emerald-700/80">
+              <span className="text-[10px] text-emerald-300 block font-semibold">Pressure</span>
+              <span className="text-sm font-black text-white">{liveTraps[0].pressure} hPa</span>
+            </div>
+            <div className="bg-emerald-900/80 px-3 py-1.5 rounded-xl border border-emerald-700/80">
+              <span className="text-[10px] text-emerald-300 block font-semibold">Battery</span>
+              <span className="text-sm font-black text-white">{liveTraps[0].battery} %</span>
+            </div>
+            <div className="bg-emerald-900/80 px-3 py-1.5 rounded-xl border border-emerald-700/80">
+              <span className="text-[10px] text-emerald-300 block font-semibold">Last Cloud Sync</span>
+              <span className="text-xs font-bold text-white">{liveTraps[0].last_sync}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top Filter Bar: Exact Match to User Reference Screenshot */}
       <div className="bg-white rounded-2xl p-3 border-2 border-[#dbe3d8] shadow-xs flex items-center gap-3">
         <div className="flex items-center gap-3 text-xs font-semibold">

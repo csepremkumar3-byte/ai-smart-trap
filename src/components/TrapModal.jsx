@@ -10,11 +10,12 @@ export default function TrapModal({ trap, onClose }) {
 
   // Exactly ONE dedicated image for this specific card (or live camera upload)
   const inspectionImage = useMemo(() => {
-    if (trap.imageUrl) {
-      return { src: trap.imageUrl, title: 'Live Field Camera Inspection' };
+    const liveSrc = trap.imageUrl || trap.image_url;
+    if (liveSrc) {
+      return { src: liveSrc, title: 'Live Field Camera Inspection' };
     }
     return getInspectionImageForTrap(trap.id);
-  }, [trap.id, trap.imageUrl]);
+  }, [trap.id, trap.imageUrl, trap.image_url]);
 
   const handleVerify = () => {
     setIsVerified(true);
