@@ -1,11 +1,29 @@
 version: '3.8'
 
 services:
-  ai-smart-trap:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ai-smart-trap-backend
+    restart: always
+    volumes:
+      - uploads_data:/app/uploads
+      - db_data:/app/data
+    ports:
+      - "8000:8000"
+
+  frontend:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ai-smart-trap-app
+    container_name: ai-smart-trap-frontend
     restart: always
     ports:
       - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  uploads_data:
+  db_data:

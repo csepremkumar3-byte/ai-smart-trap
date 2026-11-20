@@ -14,6 +14,87 @@ export default function TrapView({ initialDistrictFilter = 'All', currentUserRol
   const [selectedIssue, setSelectedIssue] = useState('All');
   const [selectedDate, setSelectedDate] = useState('Today');
   const [activeModalTrap, setActiveModalTrap] = useState(null);
+  const [trapsList, setTrapsList] = useState(TRAPS_DATA);
+
+  // Poll /api/traps every 8 seconds for live trap uploads from ESP32 / demo traps
+  React.useEffect(() => {
+    let isMounted = true;
+    const fetchLiveTraps = async () => {
+      try {
+        const res = await fetch('/api/traps');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && Array.isArray(data.traps) && data.traps.length > 0 && isMounted) {
+          setTrapsList((prev) => {
+            const liveMap = new Map();
+            data.traps.forEach((lt) => {
+              liveMap.set(lt.id, lt);
+              if (lt.device_sn) liveMap.set(lt.device_sn, lt);
+            });
+
+            // Update existing traps
+            const updated = prev.map((t) => {
+              const live = liveMap.get(t.id) || liveMap.get(t.deviceSn);
+              if (live) {
+                return {
+                  ...t,
+                  temp: live.temp !== null && live.temp !== undefined ? String(live.temp) : t.temp,
+                  humidity: live.humidity !== null && live.humidity !== undefined ? String(live.humidity) : t.humidity,
+                  pressure: live.pressure !== null && live.pressure !== undefined ? `${live.pressure} hPa` : t.pressure,
+                  battery: live.battery !== null && live.battery !== undefined ? live.battery : t.battery,
+                  lastSync: live.last_sync || t.lastSync,
+                  issue: live.issue || t.issue,
+                  moths: live.moths !== undefined && live.moths !== null ? live.moths : t.moths,
+                  imageUrl: live.image_url || t.imageUrl,
+                  status: live.status || 'Active',
+                };
+              }
+              return t;
+            });
+
+            // Prepend brand new demo/field traps that aren't in mock data
+            data.traps.forEach((lt) => {
+              const exists = updated.some((t) => t.id === lt.id || t.deviceSn === lt.device_sn);
+              if (!exists) {
+                updated.unshift({
+                  id: lt.id,
+                  fullName: lt.full_name || `Live Field Trap - ${lt.id}`,
+                  district: lt.district || 'Hisar',
+                  state: lt.state || 'Haryana',
+                  moths: lt.moths || 0,
+                  risk: (lt.moths || 0) >= 8 ? 'High' : 'Low',
+                  status: lt.status || 'Active',
+                  issue: lt.issue || 'None',
+                  temp: String(lt.temp !== null && lt.temp !== undefined ? lt.temp : '24.5'),
+                  humidity: String(lt.humidity !== null && lt.humidity !== undefined ? lt.humidity : '65.0'),
+                  pressure: `${lt.pressure || 1013} hPa`,
+                  altitude: '215 m',
+                  deviceSn: lt.device_sn || lt.id,
+                  lastSync: lt.last_sync || 'Just now',
+                  coords: '29.1492° N, 75.7217° E',
+                  firmware: 'ESP32-Live',
+                  imageUrl: lt.image_url,
+                  battery: lt.battery || 95,
+                  detections: []
+                });
+              }
+            });
+
+            return updated;
+          });
+        }
+      } catch (err) {
+        // Silently keep current data on network error
+      }
+    };
+
+    fetchLiveTraps();
+    const interval = setInterval(fetchLiveTraps, 8000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   // Sync with role changes
   React.useEffect(() => {
@@ -27,7 +108,7 @@ export default function TrapView({ initialDistrictFilter = 'All', currentUserRol
 
   // Filtered traps
   const filteredTraps = useMemo(() => {
-    return TRAPS_DATA.filter((trap) => {
+    return trapsList.filter((trap) => {
       // Role scope lock
       if (currentUserRole?.state && trap.state !== currentUserRole.state) return false;
       if (currentUserRole?.district && trap.district !== currentUserRole.district) return false;

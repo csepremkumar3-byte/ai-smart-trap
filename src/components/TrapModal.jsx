@@ -8,10 +8,13 @@ export default function TrapModal({ trap, onClose }) {
   const [isVerified, setIsVerified] = useState(false);
   const hasFault = Boolean(trap.issue && trap.issue !== 'None');
 
-  // Exactly ONE dedicated image for this specific card
+  // Exactly ONE dedicated image for this specific card (or live camera upload)
   const inspectionImage = useMemo(() => {
+    if (trap.imageUrl) {
+      return { src: trap.imageUrl, title: 'Live Field Camera Inspection' };
+    }
     return getInspectionImageForTrap(trap.id);
-  }, [trap.id]);
+  }, [trap.id, trap.imageUrl]);
 
   const handleVerify = () => {
     setIsVerified(true);
