@@ -96,27 +96,35 @@ def health_check():
         "time": datetime.datetime.now().isoformat()
     }
 
+@app.api_route("/Mycamera.aspx", methods=["GET", "POST"])
 @app.api_route("/CICRAIIO.aspx", methods=["GET", "POST"])
 @app.api_route("/api/upload", methods=["GET", "POST"])
 async def universal_trap_upload(request: Request):
     """
-    Universal ingestion endpoint supporting both:
-    1. /CICRAIIO.aspx (Native Indianmark firmware URL)
-    2. /api/upload (Modern REST API)
-    Handles Multipart, JSON, Form, and Query parameters.
+    Universal ingestion endpoint supporting:
+    1. /CICRAIIO.aspx (Native ESP8266 weather telemetry: ?C&=ID&C1=TEMP&C2=HUM&C3=PRESS&C4=NOISE)
+    2. /Mycamera.aspx (Native Raspberry Pi camera upload from imiot.py: multipart 'image')
+    3. /api/upload (Modern REST API)
     """
     now = datetime.datetime.now()
     timestamp_str = now.strftime("%d-%m-%Y %H:%M:%S")
     file_timestamp = now.strftime("%Y%m%d_%H%M%S")
 
-    # Extract all possible query parameters
+    # Extract all possible query parameters (including Indianmark native C, C1, C2, C3, C4)
     qp = dict(request.query_params)
-    trap_id = qp.get("sn") or qp.get("trap_id") or qp.get("id") or qp.get("device_sn")
-    device_sn = qp.get("device_sn") or qp.get("sn") or trap_id
-    temp = qp.get("temp") or qp.get("temperature") or qp.get("t")
-    humidity = qp.get("humidity") or qp.get("hum") or qp.get("h")
-    pressure = qp.get("pressure") or qp.get("press") or qp.get("p")
-    battery = qp.get("battery") or qp.get("bat") or qp.get("b")
+    trap_id = (
+        qp.get("C")
+        or qp.get("C&")
+        or qp.get("sn")
+        or qp.get("trap_id")
+        or qp.get("id")
+        or qp.get("device_sn")
+    )
+    device_sn = qp.get("device_sn") or qp.get("C") or qp.get("sn") or trap_id
+    temp = qp.get("C1") or qp.get("temp") or qp.get("temperature") or qp.get("t")
+    humidity = qp.get("C2") or qp.get("humidity") or qp.get("hum") or qp.get("h")
+    pressure = qp.get("C3") or qp.get("pressure") or qp.get("press") or qp.get("p")
+    battery = qp.get("C4") or qp.get("battery") or qp.get("bat") or qp.get("b")
     moths = qp.get("moths") or qp.get("count") or 0
 
     image_rel_url = None
