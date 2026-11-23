@@ -112,15 +112,28 @@ async def universal_trap_upload(request: Request):
 
     # Extract all possible query parameters (including Indianmark native C, C1, C2, C3, C4)
     qp = dict(request.query_params)
+    raw_query = str(request.url.query)
+
     trap_id = (
         qp.get("C")
         or qp.get("C&")
+        or qp.get("")
         or qp.get("sn")
         or qp.get("trap_id")
         or qp.get("id")
         or qp.get("device_sn")
     )
-    device_sn = qp.get("device_sn") or qp.get("C") or qp.get("sn") or trap_id
+
+    # Parse Indianmark ?C&=DEVICEID syntax directly from raw query
+    if "C&=" in raw_query:
+        try:
+            val_after_c = raw_query.split("C&=", 1)[1].split("&", 1)[0]
+            if val_after_c:
+                trap_id = val_after_c
+        except Exception:
+            pass
+
+    device_sn = qp.get("device_sn") or trap_id
     temp = qp.get("C1") or qp.get("temp") or qp.get("temperature") or qp.get("t")
     humidity = qp.get("C2") or qp.get("humidity") or qp.get("hum") or qp.get("h")
     pressure = qp.get("C3") or qp.get("pressure") or qp.get("press") or qp.get("p")
@@ -169,6 +182,10 @@ async def universal_trap_upload(request: Request):
             for field_name in ["file", "image", "photo", "pic", "img", "upload"]:
                 val = form.get(field_name)
                 if val and hasattr(val, "filename") and val.filename:
+                    orig_base = os.path.splitext(val.filename)[0]
+                    if orig_base and ("CICR" in orig_base or "IM" in orig_base or "TRAP" in orig_base):
+                        trap_id = orig_base
+                        device_sn = orig_base
                     clean_filename = f"trap_{trap_id}_{file_timestamp}.jpg"
                     filepath = os.path.join(UPLOADS_DIR, clean_filename)
                     with open(filepath, "wb") as buffer:
@@ -236,7 +253,7 @@ async def universal_trap_upload(request: Request):
                 battery=excluded.battery,
                 issue='None',
                 last_sync=excluded.last_sync,
-                image_url=excluded.image_url,
+                image_url=CASE WHEN excluded.image_url LIKE '/uploads/%' THEN excluded.image_url ELSE COALESCE(traps.image_url, excluded.image_url) END,
                 moths=excluded.moths,
                 status='Active'
         ''', (
