@@ -30,61 +30,38 @@ export default function TrapView({ initialDistrictFilter = 'All', currentUserRol
         }
         if (data && Array.isArray(data.traps) && data.traps.length > 0 && isMounted) {
           setTrapsList((prev) => {
-            const liveMap = new Map();
-            data.traps.forEach((lt) => {
-              liveMap.set(lt.id, lt);
-              if (lt.device_sn) liveMap.set(lt.device_sn, lt);
-            });
+            // Map live traps into fully-featured demo trap cards
+            const liveTrapsCards = data.traps.map((lt) => ({
+              id: lt.id,
+              fullName: lt.full_name || `Live Field Trap - ${lt.id}`,
+              district: lt.district || 'Hisar',
+              state: lt.state || 'Haryana',
+              moths: lt.moths !== undefined && lt.moths !== null ? lt.moths : 0,
+              risk: (lt.moths || 0) >= 8 ? 'High' : 'Low',
+              status: lt.status || 'Active',
+              issue: lt.issue || 'None',
+              temp: String(lt.temp !== null && lt.temp !== undefined ? lt.temp : '28.5'),
+              humidity: String(lt.humidity !== null && lt.humidity !== undefined ? lt.humidity : '65.0'),
+              pressure: `${lt.pressure || 1012} hPa`,
+              altitude: '609.30 m',
+              deviceSn: lt.device_sn || lt.id,
+              lastSync: lt.last_sync || 'Just now',
+              coords: '29.1800° N, 75.7500° E',
+              firmware: 'ESP8266-Live',
+              imageUrl: lt.image_url,
+              battery: lt.battery || 95,
+              isLiveDemo: true,
+              detections: []
+            }));
 
-            // Update existing traps
-            const updated = prev.map((t) => {
-              const live = liveMap.get(t.id) || liveMap.get(t.deviceSn);
-              if (live) {
-                return {
-                  ...t,
-                  temp: live.temp !== null && live.temp !== undefined ? String(live.temp) : t.temp,
-                  humidity: live.humidity !== null && live.humidity !== undefined ? String(live.humidity) : t.humidity,
-                  pressure: live.pressure !== null && live.pressure !== undefined ? `${live.pressure} hPa` : t.pressure,
-                  battery: live.battery !== null && live.battery !== undefined ? live.battery : t.battery,
-                  lastSync: live.last_sync || t.lastSync,
-                  issue: live.issue || t.issue,
-                  moths: live.moths !== undefined && live.moths !== null ? live.moths : t.moths,
-                  imageUrl: live.image_url || t.imageUrl,
-                  status: live.status || 'Active',
-                };
-              }
-              return t;
-            });
+            // Filter out old mock copies of the live IDs so there are no duplicates
+            const liveIds = new Set(data.traps.map((t) => t.id).concat(data.traps.map((t) => t.device_sn)));
+            const remainingMock = prev.filter(
+              (t) => !t.isLiveDemo && !liveIds.has(t.id) && !liveIds.has(t.deviceSn)
+            );
 
-            // Prepend brand new demo/field traps that aren't in mock data
-            data.traps.forEach((lt) => {
-              const exists = updated.some((t) => t.id === lt.id || t.deviceSn === lt.device_sn);
-              if (!exists) {
-                updated.unshift({
-                  id: lt.id,
-                  fullName: lt.full_name || `Live Field Trap - ${lt.id}`,
-                  district: lt.district || 'Hisar',
-                  state: lt.state || 'Haryana',
-                  moths: lt.moths || 0,
-                  risk: (lt.moths || 0) >= 8 ? 'High' : 'Low',
-                  status: lt.status || 'Active',
-                  issue: lt.issue || 'None',
-                  temp: String(lt.temp !== null && lt.temp !== undefined ? lt.temp : '24.5'),
-                  humidity: String(lt.humidity !== null && lt.humidity !== undefined ? lt.humidity : '65.0'),
-                  pressure: `${lt.pressure || 1013} hPa`,
-                  altitude: '215 m',
-                  deviceSn: lt.device_sn || lt.id,
-                  lastSync: lt.last_sync || 'Just now',
-                  coords: '29.1492° N, 75.7217° E',
-                  firmware: 'ESP32-Live',
-                  imageUrl: lt.image_url,
-                  battery: lt.battery || 95,
-                  detections: []
-                });
-              }
-            });
-
-            return updated;
+            // LIVE DEMO CARDS ALWAYS PINNED AT THE VERY TOP OF THE FLEET GRID!
+            return [...liveTrapsCards, ...remainingMock];
           });
         }
       } catch (err) {
@@ -116,6 +93,9 @@ export default function TrapView({ initialDistrictFilter = 'All', currentUserRol
       // Role scope lock
       if (currentUserRole?.state && trap.state !== currentUserRole.state) return false;
       if (currentUserRole?.district && trap.district !== currentUserRole.district) return false;
+
+      // Real-time live demo traps are ALWAYS visible at the top of the grid
+      if (trap.isLiveDemo && !searchTerm) return true;
 
       // Search across ID (trap code), Full Name, District, State, Device S/N
       const searchLower = searchTerm.toLowerCase();
@@ -172,56 +152,7 @@ export default function TrapView({ initialDistrictFilter = 'All', currentUserRol
 
   return (
     <div className="space-y-6">
-      {/* Real-Time Connected Field Traps Banner */}
-      {rawLiveTraps.length > 0 && (
-        <div className="bg-[#145334] text-white rounded-2xl p-4 shadow-md border-2 border-emerald-500 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fadeIn">
-          <div className="flex items-center gap-3">
-            <span className="relative flex h-3.5 w-3.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-400"></span>
-            </span>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-black uppercase tracking-wider text-emerald-300">
-                  Live IoT Trap Connected
-                </span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-900 text-emerald-200 border border-emerald-600">
-                  Real Hardware Data
-                </span>
-              </div>
-              <div className="text-lg font-black text-white mt-0.5">
-                {rawLiveTraps[0].id}{' '}
-                <span className="text-xs font-normal text-emerald-200">
-                  (S/N: {rawLiveTraps[0].device_sn || rawLiveTraps[0].id})
-                </span>
-              </div>
-            </div>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 text-xs">
-            <div className="bg-emerald-900/80 px-3 py-1.5 rounded-xl border border-emerald-700/80">
-              <span className="text-[10px] text-emerald-300 block font-semibold">Temperature</span>
-              <span className="text-sm font-black text-white">{rawLiveTraps[0].temp} °C</span>
-            </div>
-            <div className="bg-emerald-900/80 px-3 py-1.5 rounded-xl border border-emerald-700/80">
-              <span className="text-[10px] text-emerald-300 block font-semibold">Humidity</span>
-              <span className="text-sm font-black text-white">{rawLiveTraps[0].humidity} %</span>
-            </div>
-            <div className="bg-emerald-900/80 px-3 py-1.5 rounded-xl border border-emerald-700/80">
-              <span className="text-[10px] text-emerald-300 block font-semibold">Pressure</span>
-              <span className="text-sm font-black text-white">{rawLiveTraps[0].pressure} hPa</span>
-            </div>
-            <div className="bg-emerald-900/80 px-3 py-1.5 rounded-xl border border-emerald-700/80">
-              <span className="text-[10px] text-emerald-300 block font-semibold">Battery</span>
-              <span className="text-sm font-black text-white">{rawLiveTraps[0].battery} %</span>
-            </div>
-            <div className="bg-emerald-900/80 px-3 py-1.5 rounded-xl border border-emerald-700/80">
-              <span className="text-[10px] text-emerald-300 block font-semibold">Last Cloud Sync</span>
-              <span className="text-xs font-bold text-white">{rawLiveTraps[0].last_sync}</span>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Filter Bar with Clean Native-Style Controls (No SVG Icons) */}
       <div className="bg-white rounded-2xl p-4 border-2 border-[#dbe3d8] shadow-xs flex flex-wrap items-center gap-3">
@@ -388,20 +319,28 @@ export default function TrapView({ initialDistrictFilter = 'All', currentUserRol
             <div
               key={trap.id}
               onClick={() => setActiveModalTrap(trap)}
-              className="bg-white rounded-2xl border-2 border-[#d5ded2] hover:border-[#145334] hover:shadow-lg transition-all duration-200 cursor-pointer overflow-hidden flex flex-col justify-between group"
+              className={`bg-white rounded-2xl border-2 ${
+                trap.isLiveDemo
+                  ? 'border-emerald-600 ring-2 ring-emerald-500/40 shadow-md'
+                  : 'border-[#d5ded2]'
+              } hover:border-[#145334] hover:shadow-lg transition-all duration-200 cursor-pointer overflow-hidden flex flex-col justify-between group`}
             >
               <div>
                 {/* 1. Header: Prominent Trap Code */}
-                <div className="px-4 py-3 bg-[#f8faf7] border-b border-[#e5ebe3] flex items-center justify-between">
+                <div className={`px-4 py-3 ${trap.isLiveDemo ? 'bg-emerald-50/80 border-b border-emerald-200' : 'bg-[#f8faf7] border-b border-[#e5ebe3]'} flex items-center justify-between`}>
                   <div className="flex items-center gap-2">
                     <div className="text-lg font-black tracking-tight text-[#145334]">
                       {trap.id}
                     </div>
-                    {trap.imageUrl && (
+                    {trap.isLiveDemo ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-600 text-white shadow-xs animate-pulse">
+                        ● LIVE DEMO TRAP
+                      </span>
+                    ) : trap.imageUrl ? (
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 animate-pulse">
                         ● LIVE IOT
                       </span>
-                    )}
+                    ) : null}
                   </div>
 
                   {/* Fault badge only if actual hardware issue */}
@@ -458,6 +397,15 @@ export default function TrapView({ initialDistrictFilter = 'All', currentUserRol
                       {trap.deviceSn || 'IMAI036CICRH0022'}
                     </span>
                   </div>
+
+                  {trap.battery !== undefined && trap.battery !== null && (
+                    <div className="flex items-center justify-between py-1.5 px-1 hover:bg-[#f8faf7] rounded transition-colors">
+                      <span className="text-[11.5px] text-[#55645a] font-semibold">Battery</span>
+                      <span className="text-xs font-extrabold text-emerald-700">
+                        {trap.battery} %
+                      </span>
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between py-1.5 px-1 hover:bg-[#f8faf7] rounded transition-colors">
                     <span className="text-[11.5px] text-[#55645a] font-semibold">Date &amp; Time</span>
